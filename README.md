@@ -1,5 +1,5 @@
 # Pintos
-This is the Pintos operating system from https://pintos-os.org/
+This is the Pintos operating system https://pintos-os.org/
 
 I plan on adding various features.
 
