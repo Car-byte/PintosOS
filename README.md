@@ -6,4 +6,4 @@ I plan on adding various features.
 As of the init commit the OS runs properly.
 
 
-# Cloned from https://github.com/jhu-cs318/pintos.git
+# Cloned from https://github.com/jhu-cs318/pintos.git and edited
