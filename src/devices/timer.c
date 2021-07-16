@@ -92,8 +92,16 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  // while (timer_elapsed (start) < ticks) 
+  //   thread_yield ();
+  int start_priority = thread_get_priority();
+  while (timer_elapsed(start) < ticks) {
+    //thread_set_priority(thread_get_priority() - 1);
+    if (thread_get_priority() > 0) {
+      thread_set_priority(thread_get_priority() - 1);
+    }
+  }
+  thread_set_priority(start_priority);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
