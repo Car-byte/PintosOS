@@ -30,6 +30,25 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+static struct list timer_waiters;
+
+
+bool wakeup_cmpr_func(const struct list_elem* a, const struct list_elem* b, void* aux) {
+  struct thread* t1 = list_entry(a, struct thread, timerelem);
+  struct thread* t2 = list_entry(b, struct thread, timerelem);
+
+  /*If equal time then put the higher priority thread first*/
+  if (t1->wakeup_time == t2->wakeup_time) {
+    return t1->priority > t2->priority;
+  }
+  else {
+    return t1->wakeup_time < t2->wakeup_time;
+  }
+}
+
+
+
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -37,6 +56,7 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&timer_waiters);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -89,19 +109,20 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  if (ticks <= 0)
+    return;
+
+  struct thread* t = thread_current();
+
+  t->wakeup_time = timer_ticks() + ticks;
 
   ASSERT (intr_get_level () == INTR_ON);
-  // while (timer_elapsed (start) < ticks) 
-  //   thread_yield ();
-  int start_priority = thread_get_priority();
-  while (timer_elapsed(start) < ticks) {
-    //thread_set_priority(thread_get_priority() - 1);
-    if (thread_get_priority() > 0) {
-      thread_set_priority(thread_get_priority() - 1);
-    }
-  }
-  thread_set_priority(start_priority);
+  
+  intr_disable();
+  list_insert_ordered(&timer_waiters, &t->timerelem, wakeup_cmpr_func, NULL);
+  intr_enable();
+
+  sema_down(&t->timer_sema);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -179,7 +200,29 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  thread_tick ();
+  thread_tick();
+
+  /*Get old level so that we can restore to the same levela after*/
+  enum intr_level old_level = intr_disable();
+
+  struct thread* t;
+
+  while (!list_empty(&timer_waiters)) {
+
+    /*Dont pop front because we dont know if its ready*/
+    t = list_entry(list_front(&timer_waiters), struct thread, timerelem);
+
+    /*timer_waiters list is by order and therfore if the 
+      first in the list is not ready then none in the list are*/
+    if (ticks <t->wakeup_time) {
+      break;
+    }
+
+    sema_up(&t->timer_sema);
+    list_pop_front(&timer_waiters);
+  }
+
+  intr_set_level(old_level);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
